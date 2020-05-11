@@ -1,162 +1,107 @@
 import boto3
+import csv
+import io
 import json
 import os
-import pandas as pd
-import time
+# import time
 import urllib.parse
+import uuid
 
-from io import StringIO
-from slack import WebClient
-from slack.errors import SlackApiError
+from github_handler import GitHubHandler
+# from io import StringIO
+# from slack import WebClient
+# from slack.errors import SlackApiError
+# from slacker import Slacker
 
 s3 = boto3.client('s3')
 
-message_block = [
-    {
-        "type": "divider"
-    },
-    {
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": "The parser was invoked by a CircleCI build:"
-        }
-    },
-    {
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": ">Time of trigger: " + payload["pretty_timestamp"] +
-            "\n>Repository: " + payload["repository_name"] +
-            "\n>Pull request number: " + payload["pull_request"] + 
-            "\n>Commit hash: " + payload["commit"] + 
-            "\n>"
-        }
-    },
-    {
-        "type": "actions",
-        "block_id": "options_block",
-        "elements": [
-            {
-                "type": "button",
-                "text": {
-                    "type": "plain_text",
-                    "text": "View Pull Request"
-                },
-                "url": "https://github.com/newsuk/" +
-                payload["repository_name"] + 
-                "/pull/" +
-                payload["pull_request"] 
-            }
-        ]
-    },
-    {
-        "type": "divider"
-    },
-]
-
-def add_to_block(blob):
-
-
-
-def parse_output(csv):
-
-    print("\nlooking for failing issues")
-
-    for index, row in csv.iterrows():
-        if row["fails"]:
-            print("- found a failing issue.")
-            print("  - severity: " + row["severity"].lower())
-
-
-def slack_ping(payload):
-    slack_token = os.environ["SLACK_API_TOKEN"]
-    client = WebClient(token=slack_token)
-
-    current_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-
-
-
-    try:
-        print("\nsending output to slack")
-        response = client.chat_postMessage(
-            username="CircleCI Security Parser",
-            channel="GR4SVGG6A",
-            text="hey",
-            blocks=message_block
-        )
-        print("- output sent\n")
-    except SlackApiError as e:
-        # You will get a SlackApiError if "ok" is False
-        assert e.response["error"]  # str like 'invalid_auth', 'channel_not_found'
-
 def lambda_handler(event, context):
+    # Make output clearer to read.
+    print("\n---")
 
-    # Create a JSON payload to pass around
-    payload = {}
+    metadata = {}
+    # slacker = Slacker()
 
-    # Use a defaut value, in case they don't exist when we get to parsing.
-    payload["pull_request"] = "N/A"
+    # Store metadata relating to the bucket object.
+    metadata["pull_request"] = "N/A"
+    metadata["bucket_name"] = event["Records"][0]["s3"]["bucket"]["name"]
+    metadata["key"] = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
 
-    print("\n\n-----")
+    # Fracture the key and obtain metadata from its elements
+    key_options = metadata["key"].split("/")
+    # print(key_options)
+    metadata["repository"] = key_options[0]
+    metadata["filename"] = key_options[-1]
+    metadata["commit"] = key_options[1]
 
-    # Get the name of the bucket
-    payload["bucket"] = event['Records'][0]['s3']['bucket']['name']
+    print("[lambda] Filename: " + metadata["filename"])
 
-    # Get the full name of the object to request from s3.
-    payload["key"] = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
-
-    # Extract the file name from the key
-    # <repo> / <commit_hash> / <job> / ... / output.etc
-    options = payload["key"].split('/')
-
-    payload["filename"] = options[-1]
-
-    if payload["filename"].startswith("output") and payload["filename"].endswith(".csv"):
-        print("captured file to consume: " + payload["filename"])
-
-        # split filename
-        filename_options = payload["filename"].split("_")
-        payload["username"] = filename_options[1]
-        print("username: " + payload["username"])
-
-        payload["repository_name"] = options[0]
-        print("- repo: " + payload["repository_name"])
-        payload["commit"] = options[1]
+    if not (metadata["filename"].startswith("output") and
+        metadata["filename"].endswith(".csv")):
+        return False
+    else:
+        print("[lambda] > File is parsed output")
         
-        # check if there is a pull request
-        if "_" in payload["commit"]:
-            payload["pull_request"] = payload["commit"].split("_")[1]
-            payload["commit"] = payload["commit"].split("_")[0]
-        print("- commit: " + payload["commit"])
-        print("- pull_request: " + payload["pull_request"])
+    filename = metadata["filename"]
 
-        payload["timestamp"] = options[2]
-        payload["pretty_timestamp"] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(payload["timestamp"])))
-        print("- timestamp: " + payload["timestamp"] + " (" + payload["pretty_timestamp"] + ")")
+    # Fracture the filename and obtain metadata from its elements
+    filename_options = filename.split(".")[0].split("_")
+    metadata["username"] = filename_options[1]
+    metadata["branch"] = filename_options[2]
+    metadata["timestamp"] = filename_options[3]
+
+    metadata["full_repository"] = metadata["username"] + "/"
+    metadata["full_repository"] += metadata["repository"]
+
+    # Open the file, it's time to parse it
+    try:
+        # print("[lambda_handler] Temporarily saving " + filename)
+        s3_object = s3.get_object(
+            Bucket = metadata["bucket_name"],
+            Key = metadata["key"]
+        )
+
+        random_filename = str(uuid.uuid4())
+        with open("/tmp/" + random_filename, "wb") as tmp_file:
+            s3.download_fileobj(
+                metadata["bucket_name"],
+                metadata["key"],
+                tmp_file
+            )
+
+        metadata["failing_issues"] = []
+        metadata["is_failing"] = False
+
+        with open("/tmp/" + random_filename, "r") as csv_file:
+            csv_reader = csv.DictReader(csv_file)
+            from pprint import pprint
+            for row in csv_reader:
+                # print(row["fails"])
+
+                # Look for failing issues.
+                # If there are any, then add them to the metadata object and invoke github settings.
+
+                # This isn't meant to be a boolean expression - it's a string
+                if row["fails"] == "True":
+                    metadata["is_failing"] = True
+                    metadata["failing_issues"].append(row)
+
+        g = GitHubHandler(metadata)
+        # title = g.get_title()
+
+        if metadata["is_failing"]:
+            print("[lambda] The scan associated with the output failed.")
+            print("[lambda] > Preparing to report this.")
+
+            g.send_pm_comment(metadata["failing_issues"])
+ 
+        else:
+            print("[lambda_handler] Scan had no failing issues. All gucci.")
+            
+    except Exception as ex:
+        raise ex 
     
-        slack_ping(payload)
+    # Make output clearer to read.
+    print("---\n")
 
-        try:
-            print("opening csv")
-            parsed_output_file = s3.get_object(
-                                    Bucket=payload["bucket"],
-                                    Key=payload["key"]
-                                )
-
-
-            csv_body = parsed_output_file["Body"].read().decode("utf-8")
-
-            csv = pd.read_csv(StringIO(csv_body))
-            # print(csv)
-
-            parse_output(csv)
-
-        except Exception as ex:
-            # print("\n" + str(ex) + "\n")
-            print()
-            raise ex
-
-    print("-----\n\n")
-
-    return 0
+    return True
