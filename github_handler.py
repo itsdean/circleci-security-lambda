@@ -76,7 +76,11 @@ class GitHubHandler:
         return table
 
 
-    def send_pm_comment(self, issues):
+    def __close_pr(self):
+        self.pr.edit(state="closed")
+
+
+    def send_fail_comment(self, issues):
         print("\n[github][send_pm_comment] Crafting and sending comment")
 
         issue_payload = self.__craft_table(issues)
@@ -107,7 +111,8 @@ class GitHubHandler:
         )
 
         # BE CAREFUL.
-        self.pr.edit(status="closed")
+        if self.metadata["is_failing"]:
+            self.__close_pr()
 
         print("[github][send_pm_comment] > Message posted")
 

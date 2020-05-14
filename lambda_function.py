@@ -110,9 +110,10 @@ def lambda_handler(event, context):
                 metadata["failing_issue_count"],
                 metadata["non_failing_issue_count"]
             ))
-            print("[lambda] > Preparing to report this.")
 
-            g.send_pm_comment(metadata["failing_issues"])
+            if metadata["is_pr"]:
+                print("[lambda] > Preparing to report this.")
+                g.send_fail_comment(metadata["failing_issues"])
 
         else:
             print("[lambda_handler] Scan had no failing issues. All gucci.")
