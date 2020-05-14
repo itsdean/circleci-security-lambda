@@ -23,7 +23,7 @@ def lambda_handler(event, context):
     # slacker = Slacker()
 
     # Store metadata relating to the bucket object.
-    metadata["pull_request"] = "N/A"
+    metadata["pr_number"] = "N/A"
     metadata["bucket_name"] = event["Records"][0]["s3"]["bucket"]["name"]
     metadata["key"] = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
 
@@ -34,6 +34,15 @@ def lambda_handler(event, context):
     metadata["filename"] = key_options[-1]
     metadata["commit"] = key_options[1]
 
+    # Reintroducing checks for the pull request value being inserted into the commit folder.
+    if "_" in metadata["commit"]:
+        commit_options = metadata["commit"].split("_")
+        metadata["commit"] = commit_options[0]
+        metadata["pr_number"] = commit_options[1]
+
+    metadata["timestamp"] = key_options[2]
+    metadata["job_name"] = key_options[3]
+
     print("[lambda] Filename: " + metadata["filename"])
 
     if not (metadata["filename"].startswith("output") and
@@ -41,14 +50,14 @@ def lambda_handler(event, context):
         return False
     else:
         print("[lambda] > File is parsed output")
-        
+
     filename = metadata["filename"]
 
     # Fracture the filename and obtain metadata from its elements
     filename_options = filename.split(".")[0].split("_")
     metadata["username"] = filename_options[1]
     metadata["branch"] = filename_options[2]
-    metadata["timestamp"] = filename_options[3]
+    # metadata["timestamp"] = filename_options[3]
 
     metadata["full_repository"] = metadata["username"] + "/"
     metadata["full_repository"] += metadata["repository"]
@@ -62,7 +71,9 @@ def lambda_handler(event, context):
         )
 
         random_filename = str(uuid.uuid4())
-        with open("/tmp/" + random_filename, "wb") as tmp_file:
+        filepath = "/tmp/" + random_filename
+
+        with open(filepath, "wb") as tmp_file:
             s3.download_fileobj(
                 metadata["bucket_name"],
                 metadata["key"],
@@ -72,35 +83,45 @@ def lambda_handler(event, context):
         metadata["failing_issues"] = []
         metadata["is_failing"] = False
 
-        with open("/tmp/" + random_filename, "r") as csv_file:
+        # Get the size of the .csv file.
+        issue_count = len(open(filepath).readlines())
+
+        # We will reduce the length by one for every failing issue.
+        metadata["non_failing_issue_count"] = issue_count
+
+        with open(filepath, "r") as csv_file:
             csv_reader = csv.DictReader(csv_file)
-            from pprint import pprint
+
             for row in csv_reader:
                 # print(row["fails"])
 
                 # Look for failing issues.
                 # If there are any, then add them to the metadata object and invoke github settings.
-
-                # This isn't meant to be a boolean expression - it's a string
                 if row["fails"] == "True":
                     metadata["is_failing"] = True
                     metadata["failing_issues"].append(row)
+                    metadata["non_failing_issue_count"] -= 1
+
+            metadata["failing_issue_count"] = len(metadata["failing_issues"])
 
         g = GitHubHandler(metadata)
-        # title = g.get_title()
 
         if metadata["is_failing"]:
-            print("[lambda] The scan associated with the output failed.")
+            print("\n[lambda] The scan associated with the output failed.")
+            print("[lambda] > There were {} failing issues and {} non-failing issues.".format(
+                metadata["failing_issue_count"],
+                metadata["non_failing_issue_count"]
+            ))
             print("[lambda] > Preparing to report this.")
 
             g.send_pm_comment(metadata["failing_issues"])
- 
+
         else:
             print("[lambda_handler] Scan had no failing issues. All gucci.")
-            
+
     except Exception as ex:
-        raise ex 
-    
+        raise ex
+
     # Make output clearer to read.
     print("---\n")
 
