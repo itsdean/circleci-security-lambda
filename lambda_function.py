@@ -3,15 +3,11 @@ import csv
 import io
 import json
 import os
-# import time
 import urllib.parse
 import uuid
 
 from github_handler import GitHubHandler
-# from io import StringIO
-# from slack import WebClient
-# from slack.errors import SlackApiError
-# from slacker import Slacker
+# from slack_handler import SlackHandler
 
 s3 = boto3.client('s3')
 
@@ -19,8 +15,10 @@ def lambda_handler(event, context):
     # Make output clearer to read.
     print("\n---")
 
+    print("\n[lambda] lambda_handler() invoked")
+
     metadata = {}
-    # slacker = Slacker()
+    # slacker = SlackHandler()
 
     # Store metadata relating to the bucket object.
     metadata["pr_number"] = "N/A"

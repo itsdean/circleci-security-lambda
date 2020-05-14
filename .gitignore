@@ -4,3 +4,4 @@ package/
 v-env/
 *.pem
 *old*
+.env
