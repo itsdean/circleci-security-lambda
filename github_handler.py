@@ -9,6 +9,8 @@ import time
 from github import Github
 from pprint import pprint
 
+from dotenv import load_dotenv
+load_dotenv()
 
 pm_comment = """
 **Summit has found vulnerabilities that failed the severity threshold.**
@@ -142,7 +144,7 @@ class GitHubHandler:
         )
 
         # Okay, now that we are authenticated, lets get an access token
-        installation_id = 7432057
+        installation_id = os.getenv("GITHUB_INSTALLATION_ID")
 
         res = requests.post(
             "https://api.github.com/installations/{}/access_tokens".format(installation_id),
