@@ -46,8 +46,8 @@ def lambda_handler(event, context):
     if not (metadata["filename"].startswith("output") and
         metadata["filename"].endswith(".csv")):
         return False
-    else:
-        print("[lambda] > File is parsed output")
+    # else:
+        # print("[lambda] > File is parsed output")
 
     filename = metadata["filename"]
 
@@ -59,6 +59,8 @@ def lambda_handler(event, context):
 
     metadata["full_repository"] = metadata["username"] + "/"
     metadata["full_repository"] += metadata["repository"]
+
+    # print(metadata["full_repository"])
 
     # Open the file, it's time to parse it
     try:
@@ -116,7 +118,8 @@ def lambda_handler(event, context):
                 g.send_fail_comment(metadata["failing_issues"])
 
         else:
-            print("[lambda_handler] Scan had no failing issues. All gucci.")
+            print("[lambda_handler] Scan had no failing issues. All good.")
+            g.send_pass_comment()
 
     except Exception as ex:
         raise ex
