@@ -103,11 +103,12 @@ class GitHubHandler:
         print("\n[github][send_pm_comment] Sending comment to PR")
 
         # Create metadata to help come back to this specific comment in other functions
-        hash_string = self.salt + ":" + self.metadata["repository"] + ":" + str(self.comment_counter)
+        timestamp = time.time()
+        hash_string = self.salt + ":" + str(timestamp) + ":" + self.metadata["repository"] + ":" + str(self.comment_counter)
         hash_string = hash_string.encode("utf-8")
         information = {
             "hash": hashlib.sha1(hash_string).hexdigest()[1:10],
-            "timestamp": time.time()
+            "timestamp": timestamp
         }
         print("[github][send_pr_comment] > Hash: " + information["hash"])
 
@@ -192,6 +193,10 @@ class GitHubHandler:
             headers = headers
         )
         print("[github][authenticate] > Authentication token creation response code:", res.status_code)
+
+        if str(res.status_code) != "201":
+            print("incoming error, brace\n")
+            print(res.body)
 
         self.authentication_token = res.json()["token"]
 
