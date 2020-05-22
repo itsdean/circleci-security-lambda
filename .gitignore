@@ -6,3 +6,5 @@ v-env/
 *.pem
 .env
 config*.json
+
+*prod*

@@ -46,7 +46,7 @@ There will be a <code>parsed_output/*.csv</code> file containing all reported is
 <summary><i>Need to mark issues as false positives?</i></summary>
 
 <sub>
-If any of the reported issues are a false-positive, create a <code>security.yml</code> file in the root of your project and whitelist those issues in the following format:
+If any of the reported issues are a false-positive, create a <code>.security</code> folder, with a <code>parser.yml</code> file inside, whitelisting the issues in the following format:
 <pre><code>whitelist:
  - &lt;issue_id_1&gt;
  - &lt;issue_id_2&gt;
