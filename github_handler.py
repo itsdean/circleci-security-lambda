@@ -13,13 +13,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 pass_comment_template = """
-:white_check_mark: **The parser did not find any vulnerabilities failing the severity threshold.**
-:hash: In total, there were {} issues identified during this build.
+:white_check_mark:  | **The parser did not find any vulnerabilities failing the severity threshold.**
+:hash:  | In total, there were {} issues identified during this build.
 """
 
+# fail_comment_template = """
+# :x:  | **The parser has found vulnerabilities that failed the severity threshold.**
+# :hash:  | In total, there were {} failing issues and {} non-failing issues.
+
+# <details>
+# <summary><b>Security issues</b></summary><br>
+# {}
+# </details>
+# """
+
 fail_comment_template = """
-:x: **The parser has found vulnerabilities that failed the severity threshold.**
-:hash: In total, there were {} failing issues and {} non-failing issues.
+:x:  | **The parser has found vulnerabilities that failed the severity threshold.**
+:hash:  | In total, there were {} failing issues.
 
 <details>
 <summary><b>Security issues</b></summary><br>
@@ -139,12 +149,17 @@ class GitHubHandler:
 
         issue_payload = self.__craft_table(issues)
 
+        # self.send_pr_comment(fail_comment_template.format(
+        #     self.metadata["failing_issue_count"],
+        #     self.metadata["non_failing_issue_count"],
+        #     issue_payload
+        # ))
+
         self.send_pr_comment(fail_comment_template.format(
             self.metadata["failing_issue_count"],
-            self.metadata["non_failing_issue_count"],
+            # self.metadata["non_failing_issue_count"],
             issue_payload
-        ))
-
+        ))        
 
         # BE CAREFUL.
         self.__close_pr()
