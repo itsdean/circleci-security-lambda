@@ -204,7 +204,7 @@ class GitHubHandler:
         installation_id = os.getenv("GITHUB_INSTALLATION_ID")
 
         res = requests.post(
-            "https://api.github.com/installations/{}/access_tokens".format(installation_id),
+            "https://api.github.com/app/installations/{}/access_tokens".format(installation_id),
             headers = headers
         )
         print("[github][authenticate] > Authentication token creation response code:", res.status_code)

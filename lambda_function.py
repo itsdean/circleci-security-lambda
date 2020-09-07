@@ -108,9 +108,8 @@ def lambda_handler(event, context):
 
         if metadata["is_failing"]:
             print("\n[lambda] The scan associated with the output failed.")
-            print("[lambda] > There were {} failing issues and {} non-failing issues.".format(
+            print("[lambda] > There were {} failing issues.".format(
                 metadata["failing_issue_count"],
-                metadata["non_failing_issue_count"]
             ))
 
             if metadata["is_pr"]:
