@@ -1,127 +1,118 @@
 import boto3
 import csv
+import glob
 import io
 import json
 import os
+import tempfile
 import urllib.parse
 import uuid
 
 from github_handler import GitHubHandler
 # from slack_handler import SlackHandler
 
-s3 = boto3.client('s3')
+s3 = boto3.resource('s3')
+s3_client = boto3.client("s3")
+
+def load_metadata(metadata_file, bucket_name):
+    print(f"[lambda] retrieving metadata from {metadata_file}")
+
+    with tempfile.TemporaryFile() as metadata_file_object:
+        print("[lambda][load_metadata] > downloading metadata file")
+        s3_client.download_fileobj(bucket_name, metadata_file, metadata_file_object)
+        print("[lambda][load_metadata] > converting to json object")
+        metadata_file_object.seek(0)
+        metadata_json_object = json.loads(metadata_file_object.read().decode('utf-8'))
+        print("[lambda][load_metadata] > loaded into json object\n")
+        return metadata_json_object
+
+    return None
+
+def load_report(metadata, report_file, bucket_name):
+
+    print("[lambda] creating GitHubHandler instance\n[lambda] ---")
+    g = GitHubHandler(metadata)
+    print("[lambda] ---\n[lambda] GitHubHandler instance configured")
+
+    # print("[lambda] parsing report")
+
+    from pprint import pprint
+    pprint(metadata)
+
+    # issue_count = 0
+
+    failing_issues = []
+    is_failing = False
+
+    with tempfile.TemporaryFile() as report_file_object:
+        print("[lambda][load_report] downloading report file")
+        s3_client.download_fileobj(bucket_name, report_file, report_file_object)
+        print("[lambda][load_report] > injecting into csv.DictReader")
+        report_file_object.seek(0)
+        report_string_object = report_file_object.read().decode("utf-8")
+        csv_reader = csv.DictReader(io.StringIO(report_string_object))
+
+        print("[lambda][load_report] looking for failing issues")
+        counter = 0
+        for row in csv_reader:
+            counter += 1
+            # print(row["fails"])
+            if row["fails"] == "True":
+                is_failing = True
+                failing_issues.append(row)
+
+       # If the scan was set not to fail (i.e. fail_threshold was set to off), reset is_failing
+        if metadata["fail_threshold"] == "off":
+            print("[lambda][load_report] > fail_threshold was explicitly turned off - not failing this build but reporting it is off")
+            is_failing = False
+
+        if is_failing:
+            print("[lambda][load_report] > the scan has failing issues!")
+            print(f"[lambda][load_report] > the failing issue count is {len(failing_issues)}")
+            if metadata["is_pr"]:
+                print("\n[lambda][load_report] preparing to report this in the pr.")
+                print("[lambda][load_report] ---")
+                g.send_fail_comment(failing_issues)
+                print("[lambda][load_report] ---")
+        else:
+            print("[lambda][load_report] scan had no failing issues. All good.")
+            if metadata["is_pr"]:
+                print("\n[lambda][load_report] preparing to report this in the pr.")
+                print("[lambda][load_report] ---")
+                g.send_pass_comment(counter)
+                print("[lambda][load_report] ---")
+
 
 def lambda_handler(event, context):
+    metadata = None
+
     # Make output clearer to read.
     print("\n---")
 
-    print("\n[lambda] lambda_handler() invoked")
+    print("\n[lambda] instantiated")
 
-    metadata = {}
-    # slacker = SlackHandler()
+    bucket_name = event["Records"][0]["s3"]["bucket"]["name"]
+    key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
 
-    # Store metadata relating to the bucket object.
-    metadata["pr_number"] = "N/A"
-    metadata["bucket_name"] = event["Records"][0]["s3"]["bucket"]["name"]
-    metadata["key"] = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
+    directory = key.rsplit("/", 1)[0]
+    print(f"[lambda] directory: {directory}\n")
 
-    # Fracture the key and obtain metadata from its elements
-    key_options = metadata["key"].split("/")
-    # print(key_options)
-    metadata["repository"] = key_options[0]
-    metadata["filename"] = key_options[-1]
-    metadata["commit"] = key_options[1]
+    # List and get filepaths within "directory"
+    filenames = []
+    for parser_object in s3.Bucket(bucket_name).objects.filter(Prefix = directory):
+        filenames.append(parser_object.key)
 
-    # Reintroducing checks for the pull request value being inserted into the commit folder.
-    if "_" in metadata["commit"]:
-        commit_options = metadata["commit"].split("_")
-        metadata["commit"] = commit_options[0]
-        metadata["pr_number"] = commit_options[1]
+    for parser_output_file in filenames:
+        # Deal with metadata
+        if parser_output_file.endswith(".json"):
+            metadata = load_metadata(parser_output_file, bucket_name)
 
-    metadata["timestamp"] = key_options[2]
-    metadata["job_name"] = key_options[3]
-
-    print("[lambda] Filename: " + metadata["filename"])
-
-    if not (metadata["filename"].startswith("output") and
-        metadata["filename"].endswith(".csv")):
+    if metadata is None:
+        print("[lambda] warning: metadata file not parsed. please check the s3 bucket!\n")
         return False
-    # else:
-        # print("[lambda] > File is parsed output")
 
-    filename = metadata["filename"]
-
-    # Fracture the filename and obtain metadata from its elements
-    filename_options = filename.split(".")[0].split("_")
-    metadata["username"] = filename_options[1]
-    metadata["branch"] = filename_options[2]
-    # metadata["timestamp"] = filename_options[3]
-
-    metadata["full_repository"] = metadata["username"] + "/"
-    metadata["full_repository"] += metadata["repository"]
-
-    # print(metadata["full_repository"])
-
-    # Open the file, it's time to parse it
-    try:
-        # print("[lambda_handler] Temporarily saving " + filename)
-        s3_object = s3.get_object(
-            Bucket = metadata["bucket_name"],
-            Key = metadata["key"]
-        )
-
-        random_filename = str(uuid.uuid4())
-        filepath = "/tmp/" + random_filename
-
-        with open(filepath, "wb") as tmp_file:
-            s3.download_fileobj(
-                metadata["bucket_name"],
-                metadata["key"],
-                tmp_file
-            )
-
-        metadata["failing_issues"] = []
-        metadata["is_failing"] = False
-
-        # Get the size of the .csv file.
-        issue_count = len(open(filepath).readlines())
-
-        # We will reduce the length by one for every failing issue.
-        metadata["non_failing_issue_count"] = issue_count
-
-        with open(filepath, "r") as csv_file:
-            csv_reader = csv.DictReader(csv_file)
-
-            for row in csv_reader:
-                # print(row["fails"])
-
-                # Look for failing issues.
-                # If there are any, then add them to the metadata object and invoke github settings.
-                if row["fails"] == "True":
-                    metadata["is_failing"] = True
-                    metadata["failing_issues"].append(row)
-                    metadata["non_failing_issue_count"] -= 1
-
-            metadata["failing_issue_count"] = len(metadata["failing_issues"])
-
-        g = GitHubHandler(metadata)
-
-        if metadata["is_failing"]:
-            print("\n[lambda] The scan associated with the output failed.")
-            print("[lambda] > There were {} failing issues.".format(
-                metadata["failing_issue_count"],
-            ))
-
-            if metadata["is_pr"]:
-                print("[lambda] > Preparing to report this.")
-                g.send_fail_comment(metadata["failing_issues"])
-
-        else:
-            print("[lambda_handler] Scan had no failing issues. All good.")
-            g.send_pass_comment()
-
-    except Exception as ex:
-        raise ex
+    # now that metadata's loaded, deal with the actual report
+    load_report(metadata, key, bucket_name)
 
     # Make output clearer to read.
     print("---\n")

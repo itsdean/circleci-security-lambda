@@ -13,7 +13,7 @@ idna==2.9
 jmespath==0.9.5
 multidict==4.7.5
 pycparser==2.20
-PyGithub==1.51
+PyGithub==1.53
 PyJWT==1.7.1
 python-dateutil==2.8.1
 python-dotenv==0.13.0

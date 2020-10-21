@@ -1,4 +1,5 @@
 from cryptography.hazmat.backends import default_backend
+import base64
 import hashlib
 import jwt
 import os
@@ -12,20 +13,14 @@ from pprint import pprint
 from dotenv import load_dotenv
 load_dotenv()
 
+forced_comment_template = """
+:warning: | **The fail threshold was explicitly turned off for this scan!**
+"""
+
 pass_comment_template = """
 :white_check_mark:  | **The parser did not find any vulnerabilities failing the severity threshold.**
 :hash:  | In total, there were {} issues identified during this build.
 """
-
-# fail_comment_template = """
-# :x:  | **The parser has found vulnerabilities that failed the severity threshold.**
-# :hash:  | In total, there were {} failing issues and {} non-failing issues.
-
-# <details>
-# <summary><b>Security issues</b></summary><br>
-# {}
-# </details>
-# """
 
 fail_comment_template = """
 :x:  | **The parser has found vulnerabilities that failed the severity threshold.**
@@ -38,13 +33,12 @@ fail_comment_template = """
 """
 
 metadata_header = """
-**CircleCI Job**: {}
+{}
 **Scan time**: {}
 
 ---
 
 """
-
 
 metadata_footer = """
 
@@ -56,11 +50,12 @@ There will be a <code>parsed_output/*.csv</code> file containing all reported is
 <summary><i>Need to mark issues as false positives?</i></summary>
 
 <sub>
-If any of the reported issues are a false-positive, create a <code>.security</code> folder, with a <code>parser.yml</code> file inside, whitelisting the issues in the following format:
-<pre><code>whitelist:
- - &lt;issue_id_1&gt;
- - &lt;issue_id_2&gt;
- - etc.</code></pre>
+If any of the reported issues are a false-positive, create a <code>.security</code> folder, with a <code>parser.yml</code> file inside, allowing the issues in the following format:
+<pre><code>allowlist:
+ ids:
+  - &lt;issue_id_1&gt;
+  - &lt;issue_id_2&gt;
+  - etc.</code></pre>
 Future reports will ignore those issues.
 </sub>
 </details>
@@ -74,6 +69,14 @@ Future reports will ignore those issues.
     Time of comment creation: {}
     </sub>
 </details>
+"""
+
+minimizecomment_mutation = """
+mutation MinimizeComment($commentId: ID!, $minimizeReason: ReportedContentClassifiers!) {
+    minimizeComment(input: {subjectId: $commentId, classifier: $minimizeReason}) {
+        clientMutationId
+    }
+}
 """
 
 
@@ -110,7 +113,7 @@ class GitHubHandler:
 
 
     def send_pr_comment(self, template):
-        print("\n[github][send_pm_comment] Sending comment to PR")
+        print("[github][send_pr_comment] sending comment to pull request")
 
         # Create metadata to help come back to this specific comment in other functions
         timestamp = time.time()
@@ -120,12 +123,21 @@ class GitHubHandler:
             "hash": hashlib.sha1(hash_string).hexdigest()[1:10],
             "timestamp": timestamp
         }
-        print("[github][send_pr_comment] > Hash: " + information["hash"])
+        print("[github][send_pr_comment] > hash: " + information["hash"])
+
+        if self.metadata["is_circleci"]:
+            job = self.metadata["circleci_info"]["job"]
+            job_comment = f"**CircleCI Job**: {job}"
+        else:
+            job_comment = "**I'm not sure what job was run!**"
 
         comment = metadata_header.format(
-            self.metadata["job_name"],
+            job_comment,
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(self.metadata["timestamp"]))),
         )
+
+        if self.metadata["fail_threshold"] == "off":
+            comment += forced_comment_template
 
         # Add the custom information from the invoker function.
         # The formatting is done beforehand, so all we need to do is
@@ -137,42 +149,80 @@ class GitHubHandler:
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(information["timestamp"])))
         )
 
+        # look for the last parser comment and hide it
+        #####
+
+        comments = []
+        for pr_comment in self.pr.get_issue_comments():
+            comments.append(pr_comment)
+
+        # now flip it and reverse it
+        for pr_comment in reversed(comments):
+            if "circleci-security-parser" in pr_comment.user.login:
+
+                print("[github][send_pr_comment] marking past comment (if any) as outdated")
+                # wow we have to manually do this lmao
+                comment_id = pr_comment.id
+                print(f"[github][send_pr_comment] comment id: {comment_id}")
+                print(f"[github][send_pr_comment] > converting to v4 node_id")
+                comment_node_id = base64.b64encode(f"012:IssueComment{comment_id}".encode("utf-8"))
+                print(f"[github][send_pr_comment] > v4 node id: {comment_node_id}")
+
+                headers = {
+                    "Authorization": "Bearer {}".format(self.authentication_token)
+                }
+
+                variables = {
+                    "commentId": comment_node_id,
+                    "minimizeReason": "OUTDATED"
+                }
+
+                request = requests.post(
+                    'https://api.github.com/graphql',
+                    json={
+                        'query': minimizecomment_mutation,
+                        'variables': variables
+                    },
+                    headers=headers
+                )
+
+                if request.status_code == 200:
+                    print(f"[github][send_pr_comment] > past comment should now be outdated")
+                else:
+                    print("[github][send_pr_comment] > warning: unable to hide past comment")
+
+                break
+
         self.pr.create_issue_comment(
             body=comment
         )
 
-        print("[github][send_pr_comment] > Message posted")
+        print("[github][send_pr_comment] > comment posted")
 
 
     def send_fail_comment(self, issues):
-        print("\n[github][send_fail_comment] Crafting fail comment")
+        print("[github][send_fail_comment] crafting fail comment")
 
         issue_payload = self.__craft_table(issues)
 
-        # self.send_pr_comment(fail_comment_template.format(
-        #     self.metadata["failing_issue_count"],
-        #     self.metadata["non_failing_issue_count"],
-        #     issue_payload
-        # ))
-
         self.send_pr_comment(fail_comment_template.format(
-            self.metadata["failing_issue_count"],
-            # self.metadata["non_failing_issue_count"],
+            len(issues),
             issue_payload
         ))        
 
         # BE CAREFUL.
-        self.__close_pr()
+        # self.__close_pr()
 
 
-    def send_pass_comment(self):
+    def send_pass_comment(self, issue_count):
 
         self.send_pr_comment(pass_comment_template.format(
-            self.metadata["non_failing_issue_count"]
+            issue_count
         ))
 
+
     def __authenticate(self):
-        print("\n[github][authenticate] Authenticating")
+        print("[github][authenticate] authenticating")
 
         filename = "pkey.pem"
         cert_str = open(filename, "r").read()
@@ -207,7 +257,7 @@ class GitHubHandler:
             "https://api.github.com/app/installations/{}/access_tokens".format(installation_id),
             headers = headers
         )
-        print("[github][authenticate] > Authentication token creation response code:", res.status_code)
+        print("[github][authenticate] > authentication token creation response code:", res.status_code)
 
         if str(res.status_code) != "201":
             print("incoming error, brace\n")
@@ -216,65 +266,40 @@ class GitHubHandler:
         self.authentication_token = res.json()["token"]
 
         self.g = Github(self.authentication_token)
-        print("[github][authenticate] > Authenticated")
+        print("[github][authenticate] > authenticated")
         return True
-
-
-    def __check_pr(self):
-
-        self.metadata["is_pr"] = False
-
-        if self.metadata["pr_number"] != "N/A" or self.metadata["title"].startswith("Merge"):
-            self.metadata["is_pr"] = True
-            return True
-
-        return False
-
-
-    def __parse_pr(self):
-
-            print("\n[github][parse_pr] Parsing commit title")
-
-            pr_number_regex = r"(?P<title>Merge pull request #(?P<pr>[0-9]+) from .+)"
-            self.metadata["pr_number"] = int(re.search(pr_number_regex, self.metadata["title"]).group("pr"))
 
 
     def __get_info(self):
         """
         Get further metadata from GitHub on the project.
         """
-        # print("[github] Obtaining repository metadata")
-        print("\n[github][get_info] Acquiring context")
 
         # Get the repository object
-        self.repository = self.g.get_repo(self.metadata["full_repository"])
+        print("[github][get_info] getting repository")
+        project_username = self.metadata["project_username"]
+        repository = self.metadata["repository"]
+        repository_path = f"{project_username}/{repository}"
+        self.repository = self.g.get_repo(repository_path)
 
         # Get the GitCommit object via the hash
-        commit = self.repository.get_commit(sha=self.metadata["commit"]).commit
+        print("[github][get_info] getting commit")
+        commit = self.repository.get_commit(sha=self.metadata["commit_hash"]).commit
 
         # Get the commit message title.
         title = commit.message.split("\n")[0]
         print("[github][get_info] Commit title: \"" + title + "\"")
-        self.metadata["title"] = title
-
-        self.__check_pr()
+        # self.metadata["title"] = title
 
         if self.metadata["is_pr"]:
-
-            print("[github][get_info] > Commit is part of a pull request")
-            print("[github][get_info] >> Obtaining pull request information")
-
-            # The latter check stops redundant code from running in case the PR number is obtained from the folder (which is the case when builds are triggered on PRs being opened).
-            if self.metadata["pr_number"] == "N/A":
-                self.__parse_pr()
-
-            print("[github][get_info] >> PR mumber:", self.metadata["pr_number"])
-
-            self.pr = self.repository.get_pull(int(self.metadata["pr_number"]))
+            print("[github][get_info] > this is a pull request commit")
+            print("[github][get_info] > getting pr information")
+            print(f"[github][get_info] >> pr url: {self.metadata['pr_info']['pr_url']}")
+            self.pr = self.repository.get_pull(int(self.metadata['pr_info']['pr_number']))
 
 
     def __init__(self, metadata):
-        print("\n[github][init] Instantiated")
+        print("[github][__init__] instantiated")
         self.salt = "alltheseflavoursandyouchoosetobesalty"
         self.comment_counter = 1
         self.metadata = metadata
