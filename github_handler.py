@@ -166,14 +166,14 @@ class GitHubHandler:
                 print(f"[github][send_pr_comment] comment id: {comment_id}")
                 print(f"[github][send_pr_comment] > converting to v4 node_id")
                 comment_node_id = base64.b64encode(f"012:IssueComment{comment_id}".encode("utf-8"))
-                print(f"[github][send_pr_comment] > v4 node id: {comment_node_id}")
+                print(f"[github][send_pr_comment] > v4 node id: {comment_node_id.decode('utf-8')}")
 
                 headers = {
                     "Authorization": "Bearer {}".format(self.authentication_token)
                 }
 
                 variables = {
-                    "commentId": comment_node_id,
+                    "commentId": comment_node_id.decode("utf-8"),
                     "minimizeReason": "OUTDATED"
                 }
 
