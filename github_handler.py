@@ -24,7 +24,7 @@ pass_comment_template = """
 
 fail_comment_template = """
 :x:  | **The parser has found vulnerabilities that failed the severity threshold.**
-:hash:  | In total, there were {} failing issues.
+:hash:  | **Failing issue(s) count**: {}.
 
 <details>
 <summary><b>Security issues</b></summary><br>
@@ -35,6 +35,7 @@ fail_comment_template = """
 metadata_header = """
 {}
 **Scan time**: {}
+**Build triggered by**: @{}
 
 ---
 
@@ -95,6 +96,8 @@ class GitHubHandler:
             if counter != 0:
                 table += "\n"
 
+            if "jira" in issue:
+                table += "<b>JIRA Ticket</b>: " + issue["jira"] + "<br>"
             table += "<b>Title</b>: " + issue["title"] + "<br>"
             table += "<b>Severity</b>: " + issue["severity"] + "</br>"
             table += "<b>Description</b>: " + description + "</br>"
@@ -134,6 +137,7 @@ class GitHubHandler:
         comment = metadata_header.format(
             job_comment,
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(self.metadata["timestamp"]))),
+            self.metadata["username"]
         )
 
         if self.metadata["fail_threshold"] == "off":
@@ -166,7 +170,7 @@ class GitHubHandler:
                 print(f"[github][send_pr_comment] comment id: {comment_id}")
                 print(f"[github][send_pr_comment] > converting to v4 node_id")
                 comment_node_id = base64.b64encode(f"012:IssueComment{comment_id}".encode("utf-8"))
-                print(f"[github][send_pr_comment] > v4 node id: {comment_node_id.decode('utf-8')}")
+                print(f"[github][send_pr_comment] >>> v4 node id: {comment_node_id.decode('utf-8')}")
 
                 headers = {
                     "Authorization": "Bearer {}".format(self.authentication_token)

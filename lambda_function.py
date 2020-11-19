@@ -9,6 +9,7 @@ import urllib.parse
 import uuid
 
 from github_handler import GitHubHandler
+from jira_handler import JiraHandler
 # from slack_handler import SlackHandler
 
 s3 = boto3.resource('s3')
@@ -37,10 +38,13 @@ def load_report(metadata, report_file, bucket_name):
     # print("[lambda] parsing report")
 
     from pprint import pprint
+    print()
     pprint(metadata)
+    print()
 
     # issue_count = 0
 
+    all_issues = []
     failing_issues = []
     is_failing = False
 
@@ -52,16 +56,26 @@ def load_report(metadata, report_file, bucket_name):
         report_string_object = report_file_object.read().decode("utf-8")
         csv_reader = csv.DictReader(io.StringIO(report_string_object))
 
-        print("[lambda][load_report] looking for failing issues")
-        counter = 0
         for row in csv_reader:
-            counter += 1
-            # print(row["fails"])
-            if row["fails"] == "True":
-                is_failing = True
-                failing_issues.append(row)
+            all_issues.append(row)
 
-       # If the scan was set not to fail (i.e. fail_threshold was set to off), reset is_failing
+        if metadata["jira"]:
+            j = JiraHandler(metadata)
+            j.create_jira_tickets(all_issues)
+            j.prune(all_issues) # Look for isolated issues not present in this report
+        else:
+            print("\n[lambda][load_report] jira not enabled, skipping ticket checking")
+
+        # Now that we've gone through jira, we will have to check if any of the failing issues
+        # Have a JIRA status of "vulnerability accepted".
+        # If they do, don't report them in the PR comment.
+        print("\n[lambda][load_report] collecting failing issues")
+        for issue in all_issues:
+            if issue["fails"] == "True":
+                is_failing = True
+                failing_issues.append(issue)
+
+        # If the scan was set not to fail (i.e. fail_threshold was set to off), reset is_failing
         if metadata["fail_threshold"] == "off":
             print("[lambda][load_report] > fail_threshold was explicitly turned off - not failing this build but reporting it is off")
             is_failing = False
@@ -75,11 +89,11 @@ def load_report(metadata, report_file, bucket_name):
                 g.send_fail_comment(failing_issues)
                 print("[lambda][load_report] ---")
         else:
-            print("[lambda][load_report] scan had no failing issues. All good.")
+            print("[lambda][load_report] scan had no failing issues. all good.")
             if metadata["is_pr"]:
                 print("\n[lambda][load_report] preparing to report this in the pr.")
                 print("[lambda][load_report] ---")
-                g.send_pass_comment(counter)
+                g.send_pass_comment(len(all_issues))
                 print("[lambda][load_report] ---")
 
 

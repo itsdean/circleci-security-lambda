@@ -2,6 +2,7 @@
 __pycache__/
 package/
 v-env/
+venv/
 
 *.pem
 .env
