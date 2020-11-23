@@ -134,12 +134,22 @@ class JiraHandler:
                                 print(f"[jira][create_jira_tickets] >>> {subtask.key} is closed")
             if create_issue:
                 print("[jira][create_jira_tickets] > no existing open issue found; creating a new one")
+
+                # set the title to the issue title + some branching information
+                summary = ""
+                if self.m["is_pr"]:
+                    summary += f'[PR#{self.m["pr_info"]["pr_number"]}]'
+                summary += f'[{self.m["branch"]}] '
+                summary += issue["title"]
+
+                description = f'{issue["description"]}'
+                description += f'\n\n{issue["recommendation"]}'
                 issue_fields = {
                     "project": self.project,
                     "issuetype": self.CHILD_ISSUETYPE,
                     "parent": {"key": repository.key},
-                    "summary": issue["title"],
-                    "description": f'{issue["description"]}\n\n{issue["recommendation"]}',
+                    "summary": summary,
+                    "description": description,
                     self.LOCATION_FIELD: issue["location"],
                     self.HASH_FIELD: issue_hash,
                     "labels": self.generate_labels(issue)
