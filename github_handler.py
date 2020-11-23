@@ -239,7 +239,7 @@ class GitHubHandler:
         payload = {
             "iat": timestamp,
             "exp": timestamp + (10 * 60),
-            "iss": "58070"
+            "iss": os.getenv("GITHUB_APP_ID") # THIS IS YOUR GITHUB APP'S APPID
         }
 
         gh_jwt = jwt.encode(payload, private_key, algorithm="RS256")
