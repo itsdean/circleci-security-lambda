@@ -75,26 +75,8 @@ def load_report(metadata, report_file, bucket_name):
                 is_failing = True
                 failing_issues.append(issue)
 
-        # If the scan was set not to fail (i.e. fail_threshold was set to off), reset is_failing
-        if metadata["fail_threshold"] == "off":
-            print("[lambda][load_report] > fail_threshold was explicitly turned off - not failing this build but reporting it is off")
-            is_failing = False
-
-        if is_failing:
-            print("[lambda][load_report] > the scan has failing issues!")
-            print(f"[lambda][load_report] > the failing issue count is {len(failing_issues)}")
-            if metadata["is_pr"]:
-                print("\n[lambda][load_report] preparing to report this in the pr.")
-                print("[lambda][load_report] ---")
-                g.send_fail_comment(failing_issues)
-                print("[lambda][load_report] ---")
-        else:
-            print("[lambda][load_report] scan had no failing issues. all good.")
-            if metadata["is_pr"]:
-                print("\n[lambda][load_report] preparing to report this in the pr.")
-                print("[lambda][load_report] ---")
-                g.send_pass_comment(len(all_issues))
-                print("[lambda][load_report] ---")
+        if metadata["is_pr"]:
+            g.send_comment(all_issues)
 
 
 def lambda_handler(event, context):

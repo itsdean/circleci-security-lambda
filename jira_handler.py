@@ -204,16 +204,17 @@ class JiraHandler:
                             zombie_tickets.append(subtask.key)
 
             print(f"[jira][check_validity] we have {len(zombie_tickets)} zombie ticket(s) not in this report")
-            print(f"[jira][check_validity] > checking if we can change states")
+            if len(zombie_tickets) > 0:
+                print(f"[jira][check_validity] > checking if we can change states")
 
-            for zombie in zombie_tickets:
-                
-                zombie = self.j.issue(zombie)
-                if str(zombie.fields.status).lower() != self.FIXED_STATUS.lower():
-                    print(f"[jira][check_validity] >>> changing {zombie}")
-                    self.j.transition_issue(zombie, self.FIXED_TRANSITION)
-                    self.j.add_comment(zombie, self.FIXED_COMMENT)
-                    print(f"[jira][check_validity] >>>>>> changed and commented on!")
-                else:
-                    print(f"[jira][check_validity] >>>>>> {zombie} is already marked as fixed, skipping")
+                for zombie in zombie_tickets:
+                    
+                    zombie = self.j.issue(zombie)
+                    if str(zombie.fields.status).lower() != self.FIXED_STATUS.lower():
+                        print(f"[jira][check_validity] >>> changing {zombie}")
+                        self.j.transition_issue(zombie, self.FIXED_TRANSITION)
+                        self.j.add_comment(zombie, self.FIXED_COMMENT)
+                        print(f"[jira][check_validity] >>>>>> changed and commented on!")
+                    else:
+                        print(f"[jira][check_validity] >>>>>> {zombie} is already marked as fixed, skipping")
         

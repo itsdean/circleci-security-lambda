@@ -13,25 +13,6 @@ from pprint import pprint
 from dotenv import load_dotenv
 load_dotenv()
 
-forced_comment_template = """
-:warning: | **The fail threshold was explicitly turned off for this scan!**
-"""
-
-pass_comment_template = """
-:white_check_mark:  | **The parser did not find any vulnerabilities failing the severity threshold.**
-:hash:  | In total, there were {} issues identified during this build.
-"""
-
-fail_comment_template = """
-:x:  | **The parser has found vulnerabilities that failed the severity threshold.**
-:hash:  | **Failing issue(s) count**: {}.
-
-<details>
-<summary><b>Security issues</b></summary><br>
-{}
-</details>
-"""
-
 metadata_header = """
 {}
 **Scan time**: {}
@@ -41,36 +22,72 @@ metadata_header = """
 
 """
 
-metadata_footer = """
+no_issue_template = """
+:white_check_mark: | **No issues were found in this scan!**
+"""
 
----
-To look at the entire report, please view the job's artifacts on CircleCI.
-There will be a <code>parsed_output/*.csv</code> file containing all reported issues.
+fail_comment_template = """
+:x:  | **The parser has found vulnerabilities that failed the severity threshold.**
+"""
 
-<details>
-<summary><i>Need to mark issues as false positives?</i></summary>
+pass_comment_template = """
+:white_check_mark:  | **The parser did not find any vulnerabilities failing the severity threshold.**
+"""
 
-<sub>
-If any of the reported issues are a false-positive, create a <code>.security</code> folder, with a <code>parser.yml</code> file inside, allowing the issues in the following format:
-<pre><code>allowlist:
- ids:
-  - &lt;issue_id_1&gt;
-  - &lt;issue_id_2&gt;
-  - etc.</code></pre>
-Future reports will ignore those issues.
-</sub>
-</details>
+forced_comment_template = """
+:warning: | **The fail threshold was explicitly turned off for this scan!**
+"""
 
----
+failing_issue_template = """:hash:   | **Failing issue(s) count**: {}
 
 <details>
-    <summary><sub>Boring comment metadata</sub></summary>
-    <sub>
-    Comment hash: {}</br>
-    Time of comment creation: {}
-    </sub>
+    <summary>
+        <b>Failing issues</b>
+    </summary><br>
+{}
 </details>
 """
+
+non_failing_issue_template = """:hash:   | **Non-failing issue(s) count**: {}
+
+<details>
+    <summary>
+        <b>Non-failing issues</b>
+    </summary><br>
+{}
+</details>
+"""
+
+# metadata_footer = """
+
+# ---
+# To look at the entire report, please view the job's artifacts on CircleCI.
+# There will be a <code>parsed_output/*.csv</code> file containing all reported issues.
+
+# <details>
+# <summary><i>Need to mark issues as false positives?</i></summary>
+
+# <sub>
+# If any of the reported issues are a false-positive, create a <code>.security</code> folder, with a <code>parser.yml</code> file inside, allowing the issues in the following format:
+# <pre><code>allowlist:
+#  ids:
+#   - &lt;issue_id_1&gt;
+#   - &lt;issue_id_2&gt;
+#   - etc.</code></pre>
+# Future reports will ignore those issues.
+# </sub>
+# </details>
+
+# ---
+
+# <details>
+#     <summary><sub>Boring comment metadata</sub></summary>
+#     <sub>
+#     Comment hash: {}</br>
+#     Time of comment creation: {}
+#     </sub>
+# </details>
+# """
 
 minimizecomment_mutation = """
 mutation MinimizeComment($commentId: ID!, $minimizeReason: ReportedContentClassifiers!) {
@@ -115,114 +132,159 @@ class GitHubHandler:
         self.pr.edit(state="closed")
 
 
-    def send_pr_comment(self, template):
-        print("[github][send_pr_comment] sending comment to pull request")
+    # def send_pr_comment(self, template):
+    #     print("[github][send_pr_comment] sending comment to pull request")
 
-        # Create metadata to help come back to this specific comment in other functions
-        timestamp = time.time()
-        hash_string = self.salt + ":" + str(timestamp) + ":" + self.metadata["repository"] + ":" + str(self.comment_counter)
-        hash_string = hash_string.encode("utf-8")
-        information = {
-            "hash": hashlib.sha1(hash_string).hexdigest()[1:10],
-            "timestamp": timestamp
-        }
-        print("[github][send_pr_comment] > hash: " + information["hash"])
+    #     # Create metadata to help come back to this specific comment in other functions
+    #     timestamp = time.time()
+    #     hash_string = self.salt + ":" + str(timestamp) + ":" + self.metadata["repository"] + ":" + str(self.comment_counter)
+    #     hash_string = hash_string.encode("utf-8")
+    #     information = {
+    #         "hash": hashlib.sha1(hash_string).hexdigest()[1:10],
+    #         "timestamp": timestamp
+    #     }
+    #     print("[github][send_pr_comment] > hash: " + information["hash"])
 
+    #     if self.metadata["is_circleci"]:
+    #         job = self.metadata["circleci_info"]["job"]
+    #         job_comment = f"**CircleCI Job**: {job}"
+    #     else:
+    #         job_comment = "**I'm not sure what job was run!**"
+
+    #     comment = metadata_header.format(
+    #         job_comment,
+    #         time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(self.metadata["timestamp"]))),
+    #         self.metadata["username"]
+    #     )
+
+    #     if self.metadata["fail_threshold"] == "off":
+    #         comment += forced_comment_template
+
+    #     # Add the custom information from the invoker function.
+    #     # The formatting is done beforehand, so all we need to do is
+    #     # add the text to the string.
+    #     comment += template
+
+    #     comment += metadata_footer.format(
+    #         information["hash"],
+    #         time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(information["timestamp"])))
+    #     )
+
+    #     # look for the last parser comment and hide it
+    #     #####
+
+    #     comments = []
+    #     for pr_comment in self.pr.get_issue_comments():
+    #         comments.append(pr_comment)
+
+    #     # now flip it and reverse it
+    #     for pr_comment in reversed(comments):
+    #         if "circleci-security-parser" in pr_comment.user.login:
+
+    #             print("[github][send_pr_comment] marking past comment (if any) as outdated")
+    #             # wow we have to manually do this lmao
+    #             comment_id = pr_comment.id
+    #             print(f"[github][send_pr_comment] comment id: {comment_id}")
+    #             print(f"[github][send_pr_comment] > converting to v4 node_id")
+    #             comment_node_id = base64.b64encode(f"012:IssueComment{comment_id}".encode("utf-8"))
+    #             print(f"[github][send_pr_comment] >>> v4 node id: {comment_node_id.decode('utf-8')}")
+
+    #             headers = {
+    #                 "Authorization": "Bearer {}".format(self.authentication_token)
+    #             }
+
+    #             variables = {
+    #                 "commentId": comment_node_id.decode("utf-8"),
+    #                 "minimizeReason": "OUTDATED"
+    #             }
+
+    #             request = requests.post(
+    #                 'https://api.github.com/graphql',
+    #                 json={
+    #                     'query': minimizecomment_mutation,
+    #                     'variables': variables
+    #                 },
+    #                 headers=headers
+    #             )
+
+    #             if request.status_code == 200:
+    #                 print(f"[github][send_pr_comment] > past comment should now be outdated")
+    #             else:
+    #                 print("[github][send_pr_comment] > warning: unable to hide past comment")
+
+    #             break
+
+    #     self.pr.create_issue_comment(
+    #         body=comment
+    #     )
+
+    #     print("[github][send_pr_comment] > comment posted")
+
+
+    def send_comment(self, issues):
+        print("[github][send_comment] crafting pr comment")
+
+        # Comment on the job that generated this
         if self.metadata["is_circleci"]:
-            job = self.metadata["circleci_info"]["job"]
-            job_comment = f"**CircleCI Job**: {job}"
+            job = f'**CircleCI Job**: {self.metadata["circleci_info"]["job"]}'
         else:
-            job_comment = "**I'm not sure what job was run!**"
+            job = "**I'm not sure what job was run!**"
 
         comment = metadata_header.format(
-            job_comment,
+            job,
             time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(self.metadata["timestamp"]))),
             self.metadata["username"]
         )
 
-        if self.metadata["fail_threshold"] == "off":
-            comment += forced_comment_template
+        print("[github][send_comment] splitting issues into failing and non-failing")
+        failing_issues = []
+        non_failing_issues = []
+        for issue in issues:
+            if issue["fails"] == "True":
+                failing_issues.append(issue)
+            else:
+                non_failing_issues.append(issue)
 
-        # Add the custom information from the invoker function.
-        # The formatting is done beforehand, so all we need to do is
-        # add the text to the string.
-        comment += template
+        fi_count = len(failing_issues)
+        nfi_count = len(non_failing_issues)
 
-        comment += metadata_footer.format(
-            information["hash"],
-            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(information["timestamp"])))
-        )
+        if fi_count == 0 and nfi_count == 0:
+            print("[lambda][send_comment] > no issues were found. reporting this")
+            comment += no_issue_template
 
-        # look for the last parser comment and hide it
-        #####
+        else:
+            if fi_count > 0:
+                print("[lambda][send_comment] > the scan contained issues that failed")
+                comment += fail_comment_template
+            else:
+                print("[lambda][send_comment] > the scan had no failing issues")
+                comment += pass_comment_template
 
-        comments = []
-        for pr_comment in self.pr.get_issue_comments():
-            comments.append(pr_comment)
+            # If the fail threshold was forcefully disabled, report this
+            if self.metadata["fail_threshold"] == "off":
+                print("[lambda][send_comment] fail_threshold was explicitly disabled. reporting this")
+                comment += forced_comment_template
 
-        # now flip it and reverse it
-        for pr_comment in reversed(comments):
-            if "circleci-security-parser" in pr_comment.user.login:
-
-                print("[github][send_pr_comment] marking past comment (if any) as outdated")
-                # wow we have to manually do this lmao
-                comment_id = pr_comment.id
-                print(f"[github][send_pr_comment] comment id: {comment_id}")
-                print(f"[github][send_pr_comment] > converting to v4 node_id")
-                comment_node_id = base64.b64encode(f"012:IssueComment{comment_id}".encode("utf-8"))
-                print(f"[github][send_pr_comment] >>> v4 node id: {comment_node_id.decode('utf-8')}")
-
-                headers = {
-                    "Authorization": "Bearer {}".format(self.authentication_token)
-                }
-
-                variables = {
-                    "commentId": comment_node_id.decode("utf-8"),
-                    "minimizeReason": "OUTDATED"
-                }
-
-                request = requests.post(
-                    'https://api.github.com/graphql',
-                    json={
-                        'query': minimizecomment_mutation,
-                        'variables': variables
-                    },
-                    headers=headers
+            # add issues here
+            if fi_count > 0:
+                issue_payload = self.__craft_table(failing_issues)
+                comment += failing_issue_template.format(
+                    fi_count,
+                    issue_payload
                 )
 
-                if request.status_code == 200:
-                    print(f"[github][send_pr_comment] > past comment should now be outdated")
-                else:
-                    print("[github][send_pr_comment] > warning: unable to hide past comment")
-
-                break
+            if nfi_count > 0:
+                issue_payload = self.__craft_table(non_failing_issues)
+                comment += non_failing_issue_template.format(
+                    nfi_count,
+                    issue_payload
+                )
 
         self.pr.create_issue_comment(
             body=comment
         )
+        print("[github][send_comment] > comment posted")
 
-        print("[github][send_pr_comment] > comment posted")
-
-
-    def send_fail_comment(self, issues):
-        print("[github][send_fail_comment] crafting fail comment")
-
-        issue_payload = self.__craft_table(issues)
-
-        self.send_pr_comment(fail_comment_template.format(
-            len(issues),
-            issue_payload
-        ))        
-
-        # BE CAREFUL.
-        # self.__close_pr()
-
-
-    def send_pass_comment(self, issue_count):
-
-        self.send_pr_comment(pass_comment_template.format(
-            issue_count
-        ))
 
 
     def __authenticate(self):
@@ -239,7 +301,7 @@ class GitHubHandler:
         payload = {
             "iat": timestamp,
             "exp": timestamp + (10 * 60),
-            "iss": os.getenv("GITHUB_APP_ID") # THIS IS YOUR GITHUB APP'S APPID
+            "iss": int(os.getenv("GITHUB_APP_ID")) # THIS IS YOUR GITHUB APP'S APPID
         }
 
         gh_jwt = jwt.encode(payload, private_key, algorithm="RS256")
@@ -264,8 +326,10 @@ class GitHubHandler:
         print("[github][authenticate] > authentication token creation response code:", res.status_code)
 
         if str(res.status_code) != "201":
-            print("incoming error, brace\n")
-            print(res.body)
+            print("There was an issue authenticating to GitHub.")
+            # print("incoming error, brace\n")
+            # print(res.body)
+            return False
 
         self.authentication_token = res.json()["token"]
 
