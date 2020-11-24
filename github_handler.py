@@ -28,41 +28,63 @@ no_issue_template = """
 
 fail_comment_template = """
 :x:  | **The parser has found vulnerabilities that failed the severity threshold.**
+
+---
 """
 
 pass_comment_template = """
 :white_check_mark:  | **The parser did not find any vulnerabilities failing the severity threshold.**
+
+---
 """
 
 forced_comment_template = """
 :warning: | **The fail threshold was explicitly turned off for this scan!**
 """
 
-failing_issue_template = """:hash:   | **Failing issue(s) count**: {}
+failing_issue_template = """
 
 <details>
     <summary>
-        <b>Failing issues</b>
+        <b>Failing issue count: {}</b>
     </summary><br>
 {}
 </details>
 """
 
-non_failing_issue_template = """:hash:   | **Non-failing issue(s) count**: {}
+non_failing_issue_template = """
 
 <details>
     <summary>
-        <b>Non-failing issues</b>
+        <b>Non-failing issue count: {}</b>
     </summary><br>
 {}
 </details>
 """
 
-# metadata_footer = """
+metadata_footer = """
 
-# ---
-# To look at the entire report, please view the job's artifacts on CircleCI.
-# There will be a <code>parsed_output/*.csv</code> file containing all reported issues.
+---
+
+To look at the entire report, please view the job's artifacts on CircleCI.
+There will be a <code>parsed_output/*.csv</code> file containing all reported issues.
+
+<details>
+    <summary><sub>Boring comment metadata</sub></summary>
+    <sub>
+    Time of comment creation: {}
+    </sub>
+</details>
+"""
+
+minimizecomment_mutation = """
+mutation MinimizeComment($commentId: ID!, $minimizeReason: ReportedContentClassifiers!) {
+    minimizeComment(input: {subjectId: $commentId, classifier: $minimizeReason}) {
+        clientMutationId
+    }
+}
+"""
+
 
 # <details>
 # <summary><i>Need to mark issues as false positives?</i></summary>
@@ -77,25 +99,6 @@ non_failing_issue_template = """:hash:   | **Non-failing issue(s) count**: {}
 # Future reports will ignore those issues.
 # </sub>
 # </details>
-
-# ---
-
-# <details>
-#     <summary><sub>Boring comment metadata</sub></summary>
-#     <sub>
-#     Comment hash: {}</br>
-#     Time of comment creation: {}
-#     </sub>
-# </details>
-# """
-
-minimizecomment_mutation = """
-mutation MinimizeComment($commentId: ID!, $minimizeReason: ReportedContentClassifiers!) {
-    minimizeComment(input: {subjectId: $commentId, classifier: $minimizeReason}) {
-        clientMutationId
-    }
-}
-"""
 
 
 class GitHubHandler:
@@ -130,95 +133,6 @@ class GitHubHandler:
 
     def __close_pr(self):
         self.pr.edit(state="closed")
-
-
-    # def send_pr_comment(self, template):
-    #     print("[github][send_pr_comment] sending comment to pull request")
-
-    #     # Create metadata to help come back to this specific comment in other functions
-    #     timestamp = time.time()
-    #     hash_string = self.salt + ":" + str(timestamp) + ":" + self.metadata["repository"] + ":" + str(self.comment_counter)
-    #     hash_string = hash_string.encode("utf-8")
-    #     information = {
-    #         "hash": hashlib.sha1(hash_string).hexdigest()[1:10],
-    #         "timestamp": timestamp
-    #     }
-    #     print("[github][send_pr_comment] > hash: " + information["hash"])
-
-    #     if self.metadata["is_circleci"]:
-    #         job = self.metadata["circleci_info"]["job"]
-    #         job_comment = f"**CircleCI Job**: {job}"
-    #     else:
-    #         job_comment = "**I'm not sure what job was run!**"
-
-    #     comment = metadata_header.format(
-    #         job_comment,
-    #         time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(self.metadata["timestamp"]))),
-    #         self.metadata["username"]
-    #     )
-
-    #     if self.metadata["fail_threshold"] == "off":
-    #         comment += forced_comment_template
-
-    #     # Add the custom information from the invoker function.
-    #     # The formatting is done beforehand, so all we need to do is
-    #     # add the text to the string.
-    #     comment += template
-
-    #     comment += metadata_footer.format(
-    #         information["hash"],
-    #         time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(information["timestamp"])))
-    #     )
-
-    #     # look for the last parser comment and hide it
-    #     #####
-
-    #     comments = []
-    #     for pr_comment in self.pr.get_issue_comments():
-    #         comments.append(pr_comment)
-
-    #     # now flip it and reverse it
-    #     for pr_comment in reversed(comments):
-    #         if "circleci-security-parser" in pr_comment.user.login:
-
-    #             print("[github][send_pr_comment] marking past comment (if any) as outdated")
-    #             # wow we have to manually do this lmao
-    #             comment_id = pr_comment.id
-    #             print(f"[github][send_pr_comment] comment id: {comment_id}")
-    #             print(f"[github][send_pr_comment] > converting to v4 node_id")
-    #             comment_node_id = base64.b64encode(f"012:IssueComment{comment_id}".encode("utf-8"))
-    #             print(f"[github][send_pr_comment] >>> v4 node id: {comment_node_id.decode('utf-8')}")
-
-    #             headers = {
-    #                 "Authorization": "Bearer {}".format(self.authentication_token)
-    #             }
-
-    #             variables = {
-    #                 "commentId": comment_node_id.decode("utf-8"),
-    #                 "minimizeReason": "OUTDATED"
-    #             }
-
-    #             request = requests.post(
-    #                 'https://api.github.com/graphql',
-    #                 json={
-    #                     'query': minimizecomment_mutation,
-    #                     'variables': variables
-    #                 },
-    #                 headers=headers
-    #             )
-
-    #             if request.status_code == 200:
-    #                 print(f"[github][send_pr_comment] > past comment should now be outdated")
-    #             else:
-    #                 print("[github][send_pr_comment] > warning: unable to hide past comment")
-
-    #             break
-
-    #     self.pr.create_issue_comment(
-    #         body=comment
-    #     )
-
-    #     print("[github][send_pr_comment] > comment posted")
 
 
     def send_comment(self, issues):
@@ -279,6 +193,52 @@ class GitHubHandler:
                     nfi_count,
                     issue_payload
                 )
+
+        comment += metadata_footer.format(
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+        )
+
+        # look for the last parser comment and hide it
+        comments = []
+        for pr_comment in self.pr.get_issue_comments():
+            comments.append(pr_comment)
+
+        # now flip it and reverse it
+        for pr_comment in reversed(comments):
+            if "circleci-security-parser" in pr_comment.user.login:
+
+                print("[github][send_pr_comment] marking past comment (if any) as outdated")
+                # wow we have to manually do this lmao
+                comment_id = pr_comment.id
+                print(f"[github][send_pr_comment] comment id: {comment_id}")
+                print(f"[github][send_pr_comment] > converting to v4 node_id")
+                comment_node_id = base64.b64encode(f"012:IssueComment{comment_id}".encode("utf-8"))
+                print(f"[github][send_pr_comment] >>> v4 node id: {comment_node_id.decode('utf-8')}")
+
+                headers = {
+                    "Authorization": "Bearer {}".format(self.authentication_token)
+                }
+
+                variables = {
+                    "commentId": comment_node_id.decode("utf-8"),
+                    "minimizeReason": "OUTDATED"
+                }
+
+                request = requests.post(
+                    'https://api.github.com/graphql',
+                    json={
+                        'query': minimizecomment_mutation,
+                        'variables': variables
+                    },
+                    headers=headers
+                )
+
+                if request.status_code == 200:
+                    print(f"[github][send_pr_comment] > past comment should now be outdated")
+                else:
+                    print("[github][send_pr_comment] > warning: unable to hide past comment")
+
+                break
 
         self.pr.create_issue_comment(
             body=comment
