@@ -143,7 +143,7 @@ class JiraHandler:
                 summary += issue["title"]
 
                 description = f'{issue["description"]}'
-                description += f'\n\n{issue["recommendation"]}'
+                description += f'\n\nh4. Recommendation\n{issue["recommendation"]}'
                 issue_fields = {
                     "project": self.project,
                     "issuetype": self.CHILD_ISSUETYPE,
