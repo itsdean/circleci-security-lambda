@@ -10,7 +10,7 @@ import uuid
 
 from github_handler import GitHubHandler
 from jira_handler import JiraHandler
-# from slack_handler import SlackHandler
+from slack_handler import SlackHandler
 
 s3 = boto3.resource('s3')
 s3_client = boto3.client("s3")
@@ -29,11 +29,16 @@ def load_metadata(metadata_file, bucket_name):
 
     return None
 
-def load_report(metadata, report_file, bucket_name):
+def load_report(slack, metadata, report_file, bucket_name):
 
-    print("[lambda] creating GitHubHandler instance\n[lambda] ---")
-    g = GitHubHandler(metadata)
-    print("[lambda] ---\n[lambda] GitHubHandler instance configured")
+    try:
+        print("[lambda] creating GitHubHandler instance\n[lambda] ---")
+        g = GitHubHandler(slack, metadata)
+        print("[lambda] ---\n[lambda] GitHubHandler instance configured")
+    except Exception as ex:
+        g = None
+        print("[lambda] Exception occurred - skipping ex.")
+        print(ex)
 
     # print("[lambda] parsing report")
 
@@ -42,11 +47,7 @@ def load_report(metadata, report_file, bucket_name):
     pprint(metadata)
     print()
 
-    # issue_count = 0
-
     all_issues = []
-    failing_issues = []
-    is_failing = False
 
     with tempfile.TemporaryFile() as report_file_object:
         print("[lambda][load_report] downloading report file")
@@ -56,30 +57,36 @@ def load_report(metadata, report_file, bucket_name):
         report_string_object = report_file_object.read().decode("utf-8")
         csv_reader = csv.DictReader(io.StringIO(report_string_object))
 
+        issue_count = {
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "informational": 0
+        }
+
         for row in csv_reader:
-            all_issues.append(row)
+            issue_count[row["severity"]] += 1
+            all_issues.append(row) 
+
+        slack.send_issue_count(issue_count)
 
         if metadata["jira"]:
-            j = JiraHandler(metadata)
-            j.create_jira_tickets(all_issues)
-            j.prune(all_issues) # Look for isolated issues not present in this report
+            j = JiraHandler(slack, metadata, all_issues)
+            j.check()
+            j.prune() # Look for isolated issues not present in this report
         else:
             print("\n[lambda][load_report] jira not enabled, skipping ticket checking")
+            slack.update("JIRA functionality disabled for this scan, skipping ticket checking")
 
-        # Now that we've gone through jira, we will have to check if any of the failing issues
-        # Have a JIRA status of "vulnerability accepted".
-        # If they do, don't report them in the PR comment.
-        print("\n[lambda][load_report] collecting failing issues")
-        for issue in all_issues:
-            if issue["fails"] == "True":
-                is_failing = True
-                failing_issues.append(issue)
-
-        if metadata["is_pr"]:
+        if metadata["is_pr"] and g:
             g.send_comment(all_issues)
+
+        slack.finish()
 
 
 def lambda_handler(event, context):
+
     metadata = None
 
     # Make output clearer to read.
@@ -103,12 +110,16 @@ def lambda_handler(event, context):
         if parser_output_file.endswith(".json"):
             metadata = load_metadata(parser_output_file, bucket_name)
 
+    print(f"[lambda] starting slackhandler\n---")
+    slack = SlackHandler(metadata)
+
     if metadata is None:
         print("[lambda] warning: metadata file not parsed. please check the s3 bucket!\n")
+        slack.update("metadata file not parsed - stopping lambda")
         return False
 
     # now that metadata's loaded, deal with the actual report
-    load_report(metadata, key, bucket_name)
+    load_report(slack, metadata, key, bucket_name)
 
     # Make output clearer to read.
     print("---\n")

@@ -136,6 +136,7 @@ class GitHubHandler:
 
 
     def send_comment(self, issues):
+        self.s.update("crafting pr comment")
         print("[github][send_comment] crafting pr comment")
 
         # Comment on the job that generated this
@@ -164,19 +165,23 @@ class GitHubHandler:
 
         if fi_count == 0 and nfi_count == 0:
             print("[lambda][send_comment] > no issues were found. reporting this")
+            slack.update("no issues were found")
             comment += no_issue_template
 
         else:
             if fi_count > 0:
                 print("[lambda][send_comment] > the scan contained issues that failed")
+                slack.update("the scan contained issues that failed")
                 comment += fail_comment_template
             else:
                 print("[lambda][send_comment] > the scan had no failing issues")
+                slack.update("the scan had no failing issues")
                 comment += pass_comment_template
 
             # If the fail threshold was forcefully disabled, report this
             if self.metadata["fail_threshold"] == "off":
                 print("[lambda][send_comment] fail_threshold was explicitly disabled. reporting this")
+                slack.update("fail_threshold was explicitly disabled")
                 comment += forced_comment_template
 
             # add issues here
@@ -326,10 +331,11 @@ class GitHubHandler:
             self.pr = self.repository.get_pull(int(self.metadata['pr_info']['pr_number']))
 
 
-    def __init__(self, metadata):
+    def __init__(self, metadata, slack):
         print("[github][__init__] instantiated")
         self.salt = "alltheseflavoursandyouchoosetobesalty"
         self.comment_counter = 1
         self.metadata = metadata
+        self.s = slack
         if self.__authenticate():
             self.__get_info()
