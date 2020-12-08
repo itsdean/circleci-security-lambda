@@ -33,7 +33,7 @@ def load_report(slack, metadata, report_file, bucket_name):
 
     try:
         print("[lambda] creating GitHubHandler instance\n[lambda] ---")
-        g = GitHubHandler(slack, metadata)
+        g = GitHubHandler(metadata, slack)
         print("[lambda] ---\n[lambda] GitHubHandler instance configured")
     except Exception as ex:
         g = None

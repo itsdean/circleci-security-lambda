@@ -165,23 +165,23 @@ class GitHubHandler:
 
         if fi_count == 0 and nfi_count == 0:
             print("[lambda][send_comment] > no issues were found. reporting this")
-            slack.update("no issues were found")
+            self.s.update("no issues were found")
             comment += no_issue_template
 
         else:
             if fi_count > 0:
                 print("[lambda][send_comment] > the scan contained issues that failed")
-                slack.update("the scan contained issues that failed")
+                self.s.update("the scan contained issues that failed")
                 comment += fail_comment_template
             else:
                 print("[lambda][send_comment] > the scan had no failing issues")
-                slack.update("the scan had no failing issues")
+                self.s.update("the scan had no failing issues")
                 comment += pass_comment_template
 
             # If the fail threshold was forcefully disabled, report this
             if self.metadata["fail_threshold"] == "off":
                 print("[lambda][send_comment] fail_threshold was explicitly disabled. reporting this")
-                slack.update("fail_threshold was explicitly disabled")
+                self.s.update("fail_threshold was explicitly disabled")
                 comment += forced_comment_template
 
             # add issues here
