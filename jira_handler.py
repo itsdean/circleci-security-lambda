@@ -145,6 +145,13 @@ class JiraHandler:
             return False
 
 
+    def __prepare_description(self, issue):
+        description = f'{issue["description"]}'
+        description += f'\n\nh4. Recommendation\n{issue["recommendation"]}'
+
+        return description
+
+
     def __create_jira_ticket(self, issue):
         issue_hash = issue["uid"]
 
@@ -163,8 +170,7 @@ class JiraHandler:
             summary = issue["title"]
 
         # Prepare the description and add the recommendation (with heading) after it
-        description = f'{issue["description"]}'
-        description += f'\n\nh4. Recommendation\n{issue["recommendation"]}'
+        description = self.__prepare_description(issue)
 
         # Populate the payload to send to JIRA
         issue_fields = {
@@ -227,6 +233,14 @@ class JiraHandler:
                         if status in self.open_statuses:
                             # print(f'[jira][check] {issue_hash[-5:]} - >>> this ticket has a status of "{status}", we won\'t raise a new one')
                             issue["jira"] = key
+
+                            # if the description has changed, update it
+                            ticket = self.j.issue(key)
+                            if issue["description"] != ticket.fields.description.split("\n\nh4.")[0]:
+                                ticket.update(
+                                    description = self.__prepare_description(issue)
+                                )
+
                             # if status == "vulnerability accepted":
                             #     print("[jira][create_jira_tickets] >>> we will not comment on this issue either as it is accepted")
                             # issue_tickets.append(subtask.key)
