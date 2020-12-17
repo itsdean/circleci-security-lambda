@@ -124,7 +124,7 @@ class JiraHandler:
             # - the subtask's hash does not exist in this scan's list of issues
             # - the subtask is open
             # then it's a zombie.
-            if not any(subtask_entry["hash"] == issue["uid"] for issue in self.i) and subtask_entry["status"] != FIXED_STATUS.lower():
+            if not any(subtask_entry["hash"] == issue["uid"] for issue in self.i) and subtask_entry["status"] != self.FIXED_STATUS.lower():
                 subtask_entry["zombie"] = True
                 self.zombie_count += 1
 
