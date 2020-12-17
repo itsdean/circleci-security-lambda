@@ -190,7 +190,7 @@ class JiraHandler:
         issue_ticket = self.j.create_issue(fields = issue_fields)
         issue["jira"] = issue_ticket.key
 
-        output = f"[jira][__create_jira_tickets] {issue_hash[-5:]} - created {issue_ticket.key} for this issue"
+        output = f"[jira][__create_jira_tickets] issue hash ending in {issue_hash[-5:]} - created {issue_ticket.key} for this issue"
 
         # If we have a parent assignee, assign them to the sub-task ticket and transition it to reported
         if assignee is not None:
